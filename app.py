@@ -33,7 +33,6 @@ st.pyplot(fig)
 
 st.subheader("Contoh Ulasan per Kelompok")
 kolom_teks = [c for c in df.columns if 'ulasan' in c.lower() or 'teks' in c.lower() or 'review' in c.lower() or 'komentar' in c.lower()]
-for k in pilihan:
+for k in kelompok_list:
     st.write(f"**Kelompok {k}** - {len(df[df['cluster_id']==k])} ulasan")
-    if kolom_teks:
-        st.dataframe(df[df['cluster_id']==k].head(5)[[kolom_teks[0], 'cluster_id']], use_container_width=True)
+    st.dataframe(df[df['cluster_id']==k].head(5), use_container_width=True)
