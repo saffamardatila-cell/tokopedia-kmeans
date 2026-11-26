@@ -1,38 +1,87 @@
 import streamlit as st
 import pandas as pd
+import re, string
 import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 
-st.set_page_config(page_title="Analisis Ulasan IndiHome", layout="wide")
-st.title("📊 Analisis Ulasan IndiHome - K-Means Clustering")
-st.write("Mengelompokkan 5.955 ulasan menjadi 6 cluster_id berdasarkan kemiripan kata.")
+st.set_page_config(page_title="KMeans Ulasan Tokopedia", layout="wide")
+st.title("📊 Clustering Ulasan Tokopedia - KMeans")
 
-@st.cache_data
-def load_data():
-    return pd.read_csv("dataset_klaster_k6.csv")
+uploaded = st.file_uploader("Upload CSV Ulasan", type=["csv"])
+if not uploaded:
+    st.info("Upload dulu CSV mentah yang isinya kolom ulasan / review / teks.")
+    st.stop()
 
-df = load_data()
-st.sidebar.header("Filter")
-kelompok_list = sorted(df['cluster_id'].unique().tolist())
-pilihan = st.sidebar.multiselect("Pilih Kelompok:", kelompok_list, default=kelompok_list)
-df_filter = df[df['cluster_id'].isin(pilihan)]
+df = pd.read_csv(uploaded)
+st.write("### 1. Data Mentah")
+st.dataframe(df.head(), use_container_width=True)
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Ulasan", len(df))
-col2.metric("Total Kelompok", df['cluster_id'].nunique())
-col3.metric("Yang Ditampilkan", len(df_filter))
+# pilih kolom teks
+kolom = st.selectbox("Pilih kolom teks ulasan", df.columns.tolist())
+teks_asli = df[kolom].astype(str).fillna("")
 
-st.subheader("Jumlah Ulasan per Kelompok")
-jumlah = df['cluster_id'].value_counts().sort_index()
+# --- PREPROCESSING ---
+st.write("### 2. Preprocessing")
+stopwords = set("yang dan di ke dari pada untuk dengan ini itu ada adalah atau juga tidak bisa akan sangat sudah oleh karena sebagai dalam pada saat".split())
+
+def preprocess(text):
+    text = text.lower()
+    text = re.sub(r"http\S+|www\S+", "", text)
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\d+", "", text)
+    tokens = text.split()  # TOKENIZING
+    tokens = [t for t in tokens if t not in stopwords and len(t) > 2]  # STOPWORD REMOVAL
+    return " ".join(tokens)
+
+df["clean_text"] = teks_asli.apply(preprocess)
+df["tokens"] = df["clean_text"].apply(lambda x: x.split())
+
+st.write("**Hasil Tokenizing (5 baris pertama):**")
+st.dataframe(df[[kolom, "clean_text", "tokens"]].head(), use_container_width=True)
+
+# --- TF-IDF + KMEANS ---
+st.write("### 3. TF-IDF + KMeans")
+k = st.slider("Pilih Jumlah Cluster (K)", 2, 10, 6)
+
+vectorizer = TfidfVectorizer(max_features=1000)
+X = vectorizer.fit_transform(df["clean_text"])
+
+kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+df["cluster_id"] = kmeans.fit_predict(X)
+
+st.success(f"Clustering selesai! Total data: {len(df)}, K = {k}")
+
+# --- EVALUASI ---
+st.write("### 4. Evaluasi Cluster")
+sil = silhouette_score(X, df["cluster_id"])
+dbi = davies_bouldin_score(X.toarray(), df["cluster_id"])
+ch = calinski_harabasz_score(X.toarray(), df["cluster_id"])
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Silhouette Score", f"{sil:.4f}")
+c2.metric("Davies-Bouldin (makin kecil makin bagus)", f"{dbi:.4f}")
+c3.metric("Calinski-Harabasz", f"{ch:.1f}")
+st.caption("Silhouette: -1 sampai 1, makin dekat 1 makin bagus pemisahan clusternya.")
+
+# --- DISTRIBUSI ---
+st.write("### 5. Distribusi & Isi Tiap Cluster")
+counts = df["cluster_id"].value_counts().sort_index()
 fig, ax = plt.subplots()
-ax.bar(jumlah.index.astype(str), jumlah.values, color="#FF4B4B")
-ax.set_xlabel("Kelompok")
+ax.bar(counts.index.astype(str), counts.values)
+ax.set_xlabel("Cluster")
 ax.set_ylabel("Jumlah Ulasan")
-for i, v in enumerate(jumlah.values):
-    ax.text(i, v + 50, str(v), ha='center')
 st.pyplot(fig)
+st.dataframe(counts.rename("Jumlah"), use_container_width=True)
 
-st.subheader("Contoh Ulasan per Kelompok")
-kolom_teks = [c for c in df.columns if 'ulasan' in c.lower() or 'teks' in c.lower() or 'review' in c.lower() or 'komentar' in c.lower()]
-for k in kelompok_list:
-    st.write(f"**Kelompok {k}** - {len(df[df['cluster_id']==k])} ulasan")
-    st.dataframe(df[df['cluster_id']==k].head(5), use_container_width=True)
+# Top words + contoh per cluster
+terms = vectorizer.get_feature_names_out()
+for cl in sorted(df["cluster_id"].unique()):
+    st.write(f"**Cluster {cl} - {len(df[df['cluster_id']==cl])} ulasan**")
+    idx = kmeans.cluster_centers_[cl].argsort()[-10:][::-1]
+    top = ", ".join([terms[i] for i in idx])
+    st.write(f"Kata kunci: `{top}`")
+    st.dataframe(df[df["cluster_id"]==cl].head(5)[[kolom, "clean_text", "cluster_id"]], use_container_width=True)
+
+st.download_button("Download Hasil Clustering (CSV)", df.to_csv(index=False), "hasil_clustering.csv", "text/csv")
