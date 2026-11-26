@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Analisis Ulasan IndiHome", layout="wide")
 st.title("📊 Analisis Ulasan IndiHome - K-Means Clustering")
-st.write("Mengelompokkan 5.955 ulasan menjadi 6 kelompok berdasarkan kemiripan kata.")
+st.write("Mengelompokkan 5.955 ulasan menjadi 6 cluster_id berdasarkan kemiripan kata.")
 
 @st.cache_data
 def load_data():
@@ -12,17 +12,17 @@ def load_data():
 
 df = load_data()
 st.sidebar.header("Filter")
-kelompok_list = sorted(df['kelompok'].unique().tolist())
+kelompok_list = sorted(df['cluster_id'].unique().tolist())
 pilihan = st.sidebar.multiselect("Pilih Kelompok:", kelompok_list, default=kelompok_list)
-df_filter = df[df['kelompok'].isin(pilihan)]
+df_filter = df[df['cluster_id'].isin(pilihan)]
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Total Ulasan", len(df))
-col2.metric("Total Kelompok", df['kelompok'].nunique())
+col2.metric("Total Kelompok", df['cluster_id'].nunique())
 col3.metric("Yang Ditampilkan", len(df_filter))
 
 st.subheader("Jumlah Ulasan per Kelompok")
-jumlah = df['kelompok'].value_counts().sort_index()
+jumlah = df['cluster_id'].value_counts().sort_index()
 fig, ax = plt.subplots()
 ax.bar(jumlah.index.astype(str), jumlah.values, color="#FF4B4B")
 ax.set_xlabel("Kelompok")
